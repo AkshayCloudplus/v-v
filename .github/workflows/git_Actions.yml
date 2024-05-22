@@ -1,0 +1,59 @@
+name: Push-to-EC2
+
+# Trigger deployment only on push to main branch
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to EC2 on master branch push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the files
+        uses: actions/checkout@v2
+
+      - name: Deploy to Server 1
+        uses: easingthemes/ssh-deploy@main
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          REMOTE_HOST: ${{ secrets.HOST_DNS }}
+          REMOTE_USER: ${{ secrets.USERNAME }}
+          TARGET: ${{ secrets.TARGET_DIR }}
+
+      - name: Executing remote ssh commands using ssh key
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST_DNS }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            sudo apt-get -y update
+            sudo apt-get install -y apache2
+            sudo systemctl start apache2
+            sudo systemctl enable apache2
+            cd /home/ubuntu
+            sudo mv index.html /var/www/html
+            sudo apt install certbot -y
+            sudo apt install python3-certbot-apache -y
+            sudo certbot --apache -d akshaykr.cloudplus.net.in --non-interactive --agree-tos -m cybercheck123.4@gmail.com
+            sudo systemctl restart apache2
+            cd /home/ubuntu/
+            wget https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+            sudo dpkg -i -E amazon-cloudwatch-agent.deb
+            cd /opt/aws/amazon-cloudwatch-agent/etc
+            sudo mv /home/ubuntu/amazon-cloudwatch-agent.json /opt/aws/amazon-cloudwatch-agent/etc/
+            sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -m ec2 -a stop
+            sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file://opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+            sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -m ec2 -a start
+
+
+      # - name: Executing remote ssh commands using ssh key
+      #   run:  bash ${GITHUB_WORKSPACE}/.github/workflows/script.sh
+      #   env:
+      #     host: ${{ secrets.HOST_DNS }}
+      #     username: ${{ secrets.USERNAME }}
+      #     key: ${{ secrets.EC2_SSH_KEY }}
+      #     run: bash ./script.sh
